@@ -5,7 +5,28 @@
     "RATE-1",
     "PRIVACY-1"
   ],
-  "inputDescription": "TODO describe workload and starting revision",
+  "inputDescription": "Repeatable workload fixtures/workload.json: 60 live-status requests from one customer (CUS-000123), 10 ms apart (atMs 0..590), so the whole burst falls inside one second and inside one 30000 ms cache period. It starts from the released starter revision a4d88ab78fe2ccf63508f4a93db31d10c878aec0, where references/good.mjs keeps the 30-second per-customer cache and references/broken.mjs is the guidance change that removed it. Each reference's observe(requests) records one run (requests, upstreamCalls, responses, logs, requirements) and evaluate() judges that observation. On this workload the cached service makes 1 upstream call; the regression makes 60, which breaks both CACHE-1 and RATE-1.",
   "assertion": "evals/assert.mjs",
-  "checks": []
+  "checks": [
+    {
+      "id": "evidence",
+      "requirementIds": ["CACHE-1", "RATE-1", "PRIVACY-1"],
+      "condition": "The observation is an object whose requests, upstreamCalls, responses and logs are arrays; requirements gives a positive maxRequestsPerSecond and cacheTtlMs and an array of non-empty forbiddenLogFragments; at least one request was recorded; every request and upstream call is {customerCode: non-empty string, atMs: finite number}; every response has a customerCode; every log entry is a string. Otherwise the run fails with an EVIDENCE violation, because none of the three requirements can be shown to hold."
+    },
+    {
+      "id": "cache-freshness",
+      "requirementIds": ["CACHE-1"],
+      "condition": "Grouping upstreamCalls by customerCode and ordering each group by atMs, every consecutive pair is at least requirements.cacheTtlMs (30000 ms) apart. A refresh exactly 30000 ms after the previous call is valid; a second call for the same customer sooner means a repeat request was not served from the cache. Different customers are judged independently."
+    },
+    {
+      "id": "rate-window",
+      "requirementIds": ["RATE-1"],
+      "condition": "For every upstream call at time t, the number of upstreamCalls with atMs in the rolling window [t, t + 1000) is at most requirements.maxRequestsPerSecond (50). Only calls that reached claims-core count, not incoming requests: 60 requests answered by 1 upstream call pass; 50 calls in one second pass, 51 fail."
+    },
+    {
+      "id": "log-privacy",
+      "requirementIds": ["PRIVACY-1"],
+      "condition": "No string in logs contains any entry of requirements.forbiddenLogFragments (case-insensitive substring match, e.g. clinicalPayload, diagnosis, glucose). Any other log text, such as 'all requests completed successfully with version 2', is irrelevant and passes."
+    }
+  ]
 }
